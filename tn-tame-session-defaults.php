@@ -2,12 +2,12 @@
 /**
  * Plugin Name:     TN Tame Session Defaults
  * Plugin URI:      https://github.com/timnashcouk/tn-tame-session-defaults
- * Description:     Provides Defult Session Values
+ * Description:     Provides Default Session Values
  * Author:          Tim Nash
  * Author URI:      https://timnash.co.uk
  * Text Domain:     tn-tame-session-defaults
  * Domain Path:     /languages
- * Version:         1.0.0
+ * Version:         1.1.0
  *
  * @package         tn-tame-session-defaults
  **/
@@ -52,3 +52,59 @@ function tn_session_limit( $username, $user ) {
 	return wp_destroy_other_sessions();
 }
 add_action( 'wp_login', 'tn_session_limit', 10, 2 );
+
+/**
+ * Validates IP & UA of a session
+ *
+ * @return mixed
+ * @since 1.1.0
+ **/
+function tn_validate_session() {
+
+	if ( is_user_logged_in() ) {
+		$sessions = WP_Session_Tokens::get_instance( get_current_user_id() );
+		$token    = wp_get_session_token();
+		// No session token means this is probably a API request let it pass.
+		// @todo: realistically the only time this might happen is admin-ajax.php or post-admin.php.
+		if ( ! $token ) {
+			return;
+		}
+		$session_data = $sessions->get( $token );
+		// No session data, we should log the user out as their token might have expired.
+		if ( ! $session_data || ! is_array( $session_data ) ) {
+			return wp_logout();
+		}
+		// Current User IP address.
+		$ip = null;
+		if ( ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
+			$ip = wp_unslash( $_SERVER['REMOTE_ADDR'] ); //phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		}
+		// Current User User-agent.
+		$ua = null;
+		if ( ! empty( $_SERVER['HTTP_USER_AGENT'] ) ) {
+			$ua = wp_unslash( $_SERVER['HTTP_USER_AGENT'] ); //phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		}
+		if ( isset( $ip ) && isset( $ua ) ) {
+			if ( $ip === $session_data['ip'] && $ua === $session_data['ua'] ) {
+				return true;
+			}
+			return wp_logout();
+		}
+	}
+	return true;
+}
+
+/**
+ * Check if we should validate sessions
+ *
+ * @return mixed
+ * @since 1.1.0
+ **/
+function tn_init_validate_session() {
+	// Check if we should validate sessions, defaults to true.
+	if ( apply_filters( 'tn_tame_session_validate_session', true ) ) {
+		return tn_validate_session();
+	}
+}
+
+add_action( 'admin_init', 'tn_init_validate_session' );
