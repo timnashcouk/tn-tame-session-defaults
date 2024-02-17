@@ -26,5 +26,10 @@ This is an optional filter that will destroy all other sessions, when a new sess
 ### tn_tame_session_validate_session
 This is an optional filter that will check the IP/Useragent of the client and compare it to the stored session details, logging out the client if they do not match. This defaults to true, to disable set filter to false.
 
+It also provides an action
+
+### tn_tame_session_non_valid
+This action is triggered if a session is deemed to not be valid, useful to hook into for maybe notification or logging.
+
 ## Changelog
 You can see the CHANGELOG.md for up to date changes.

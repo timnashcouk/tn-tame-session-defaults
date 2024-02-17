@@ -21,7 +21,7 @@
  * @return int Session length.
  * @since 1.0.0
  **/
-function tn_set_session_length( $seconds, $user_id, $remember = false ) {
+function tn_set_session_length( int $seconds, int $user_id, bool $remember = false ): int {
 	$default_session          = absint( apply_filters( 'tn_tame_session_default', 60 * 60 * 2, $user_id ) ); // 2 hours
 	$default_remember_session = absint( apply_filters( 'tn_tame_session_default_remember', 60 * 60 * 24, $user_id ) ); // 24 hours
 	if ( ! $remember ) {
@@ -40,26 +40,26 @@ add_filter( 'auth_cookie_expiration', 'tn_set_session_length', 10, 3 );
 /**
  * Destroy other sessions
  *
- * @param string $username User name.
- * @param object $user User object.
- * @return mixed
+ * @param string  $username User name.
+ * @param WP_User $user User object.
+ * @return void
  * @since 1.0.0
  **/
-function tn_session_limit( $username, $user ) {
+function tn_session_limit( string $username, WP_User $user ): void {
 	if ( apply_filters( 'tn_tame_session_limit', false, $user ) ) {
 		return;
 	}
-	return wp_destroy_other_sessions();
+	wp_destroy_other_sessions();
 }
 add_action( 'wp_login', 'tn_session_limit', 10, 2 );
 
 /**
  * Validates IP & UA of a session
  *
- * @return mixed
+ * @return void
  * @since 1.1.0
  **/
-function tn_validate_session() {
+function tn_validate_session(): void {
 
 	if ( is_user_logged_in() ) {
 		$sessions = WP_Session_Tokens::get_instance( get_current_user_id() );
@@ -72,7 +72,7 @@ function tn_validate_session() {
 		$session_data = $sessions->get( $token );
 		// No session data, we should log the user out as their token might have expired.
 		if ( ! $session_data || ! is_array( $session_data ) ) {
-			return wp_logout();
+			wp_logout();
 		}
 		// Current User IP address.
 		$ip = null;
@@ -86,24 +86,25 @@ function tn_validate_session() {
 		}
 		if ( isset( $ip ) && isset( $ua ) ) {
 			if ( $ip === $session_data['ip'] && $ua === $session_data['ua'] ) {
-				return true;
+				return;
 			}
-			return wp_logout();
+			// The session is invalid, log the user out.
+			do_action( 'tn_tame_session_non_valid', $ip, $ua, $session_data );
+			wp_logout();
 		}
 	}
-	return true;
 }
 
 /**
  * Check if we should validate sessions
  *
- * @return mixed
+ * @return void
  * @since 1.1.0
  **/
-function tn_init_validate_session() {
+function tn_init_validate_session(): void {
 	// Check if we should validate sessions, defaults to true.
 	if ( apply_filters( 'tn_tame_session_validate_session', true ) ) {
-		return tn_validate_session();
+		tn_validate_session();
 	}
 }
 
