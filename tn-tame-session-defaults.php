@@ -47,7 +47,7 @@ add_filter( 'auth_cookie_expiration', 'tn_set_session_length', 10, 3 );
  **/
 function tn_session_limit( string $_username, WP_User $user ): void {
 	// Return "true" to enable this function.
-	if ( apply_filters( 'tn_tame_session_limit', true, $user ) ) {
+	if ( ! apply_filters( 'tn_tame_session_limit', false, $user ) ) {
 		return;
 	}
 	wp_destroy_other_sessions();
