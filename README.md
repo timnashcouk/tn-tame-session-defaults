@@ -1,4 +1,6 @@
 # Tame Session Defaults
+[![License](https://img.shields.io/github/license/dknauss/tn-tame-session-defaults)](LICENSE)
+
 A very simple plugin that reduces the WordPress sessions lengths to be shorter. This helps prevents, session hijacking by reducing the window of opportunity to use gathered sessions.
 In addition it provides a couple of other use features to prevent session hijacking:
 - Shortens sessions by default
