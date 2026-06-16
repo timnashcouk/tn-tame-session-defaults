@@ -7,7 +7,7 @@
  * Author URI:      https://timnash.co.uk
  * Text Domain:     tn-tame-session-defaults
  * Domain Path:     /languages
- * Version:         1.2.0
+ * Version:         1.2.1
  *
  * @package         tn-tame-session-defaults
  **/
