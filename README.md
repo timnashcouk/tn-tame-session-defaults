@@ -3,7 +3,7 @@ A very simple plugin that reduces the WordPress sessions lengths to be shorter. 
 In addition it provides a couple of other use features to prevent session hijacking:
 - Shortens sessions by default
 - Provide filters, to do fine grain control of session lengths (for example by user or user role)
-- Validates requests made against the stored session, logging out where the IP or useragent do not match
+- Validates selected logged-in request areas against the stored session, logging out where the IP or useragent do not match
 - Optionally limits the number of sessions a user can have to 1
 
 ## Install
@@ -26,7 +26,38 @@ This filter currently acts as an opt-out for destroying other sessions. By defau
 Note: this is inverted from what the filter name may imply.
 
 ### tn_tame_session_validate_session
-This filter controls whether session IP/User-Agent validation runs for logged-in admin-area requests. This currently runs on `admin_init`, so it covers wp-admin screens, `admin-ajax.php`, and `admin-post.php`, but it is not a site-wide/front-end or REST API session validation layer. This defaults to true, to disable set filter to false.
+This filter controls whether session IP/User-Agent validation runs for logged-in admin-area requests. This currently runs on `admin_init`, so it covers wp-admin screens, `admin-ajax.php`, and `admin-post.php`. This defaults to true, to disable set filter to false.
+
+### tn_tame_session_validate_session_areas
+This filter controls which logged-in request areas should run session IP/User-Agent validation.
+
+The default policy matches the original behaviour: wp-admin validation is enabled, front-end and REST API validation are disabled.
+
+Area values can be:
+
+- `true` to validate all logged-in requests in that area.
+- `false` to skip validation for that area.
+- An array of path or route prefixes to validate only matching requests.
+
+```php
+add_filter(
+	'tn_tame_session_validate_session_areas',
+	function ( array $areas ): array {
+		$areas['front_end'] = array( '/account/', '/checkout/' );
+		$areas['rest_api']  = array( '/wp/v2/users', '/my-plugin/v1/' );
+
+		return $areas;
+	}
+);
+```
+
+Available areas are:
+
+- `wp_admin` for wp-admin screens, `admin-ajax.php`, and `admin-post.php`.
+- `front_end` for front-end requests.
+- `rest_api` for REST API requests.
+
+Prefix matching is segment-aware. For example, `/account/` matches `/account` and `/account/profile/`, but not `/accounting/` or `/my-account/`.
 
 It also provides an action
 
