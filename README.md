@@ -24,7 +24,7 @@ This is the session length if the remember me box is ticked it takes an integer 
 This is an optional filter that will destroy all other sessions, when a new session logs in. Meaning only a single session may occur at any given time. By default this is set to false, using this filter and setting to true will activate it.
 
 ### tn_tame_session_validate_session
-This is an optional filter that will check the IP/Useragent of the client and compare it to the stored session details, logging out the client if they do not match. This defaults to true, to disable set filter to false.
+This filter controls whether session IP/User-Agent validation runs for logged-in admin-area requests. This currently runs on `admin_init`, so it covers wp-admin screens, `admin-ajax.php`, and `admin-post.php`, but it is not a site-wide/front-end or REST API session validation layer. This defaults to true, to disable set filter to false.
 
 It also provides an action
 
