@@ -21,7 +21,9 @@ This is the session length it takes an integer that represents the expiry length
 This is the session length if the remember me box is ticked it takes an integer that represents the expiry length in seconds. It passes the user_id of the logged in user.
 
 ### tn_tame_session_limit
-This is an optional filter that will destroy all other sessions, when a new session logs in. Meaning only a single session may occur at any given time. By default this is set to false, using this filter and setting to true will activate it.
+This filter currently acts as an opt-out for destroying other sessions. By default, other sessions are destroyed on login. Returning `true` from this filter skips `wp_destroy_other_sessions()`.
+
+Note: this is inverted from what the filter name may imply.
 
 ### tn_tame_session_validate_session
 This is an optional filter that will check the IP/Useragent of the client and compare it to the stored session details, logging out the client if they do not match. This defaults to true, to disable set filter to false.
