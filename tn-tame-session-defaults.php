@@ -433,6 +433,36 @@ function tn_get_session_validation_rest_route(): string {
 }
 
 /**
+ * Get the current session token from available WordPress auth cookies.
+ *
+ * @return string Session token, or an empty string when unavailable.
+ * @since 1.3.0
+ **/
+function tn_get_session_validation_token(): string {
+	$token = wp_get_session_token();
+
+	if ( $token ) {
+		return $token;
+	}
+
+	foreach ( array( '', 'secure_auth', 'auth' ) as $scheme ) {
+		$cookie = wp_parse_auth_cookie( '', $scheme );
+
+		if ( empty( $cookie['token'] ) ) {
+			continue;
+		}
+
+		if ( get_current_user_id() !== wp_validate_auth_cookie( '', $scheme ) ) {
+			continue;
+		}
+
+		return (string) $cookie['token'];
+	}
+
+	return '';
+}
+
+/**
  * Get invalid session validation data for the current request.
  *
  * @return array|null Invalid session data, or null when the session is valid.
@@ -444,7 +474,7 @@ function tn_get_session_validation_failure(): ?array {
 	}
 
 	$sessions = WP_Session_Tokens::get_instance( get_current_user_id() );
-	$token    = wp_get_session_token();
+	$token    = tn_get_session_validation_token();
 
 	// No session token means this is probably a API request let it pass.
 	// @todo: realistically the only time this might happen is admin-ajax.php or post-admin.php.
