@@ -294,59 +294,323 @@ function tn_init_session_reauthentication(): void {
 add_action( 'admin_init', 'tn_init_session_reauthentication', 20 );
 
 /**
+ * Get the configured session validation areas.
+ *
+ * Area values can be true, false, or an array of path prefixes.
+ *
+ * @return array Session validation area policy.
+ * @since 1.3.0
+ **/
+function tn_get_session_validation_areas(): array {
+	$defaults = array(
+		'wp_admin'  => true,
+		'rest_api'  => false,
+		'front_end' => false,
+	);
+
+	$areas = apply_filters( 'tn_tame_session_validate_session_areas', $defaults, get_current_user_id() );
+
+	if ( ! is_array( $areas ) ) {
+		return $defaults;
+	}
+
+	return array_merge( $defaults, $areas );
+}
+
+/**
+ * Normalize a request path for session validation prefix matching.
+ *
+ * @param string $path Request path or route.
+ * @return string Normalized path.
+ * @since 1.3.0
+ **/
+function tn_normalize_session_validation_path( string $path ): string {
+	$parsed_path = wp_parse_url( $path, PHP_URL_PATH );
+
+	if ( is_string( $parsed_path ) ) {
+		$path = $parsed_path;
+	}
+
+	$path = '/' . ltrim( $path, '/' );
+
+	return '' === $path ? '/' : $path;
+}
+
+/**
+ * Check whether a path matches one of the configured prefixes.
+ *
+ * @param array  $prefixes Path prefixes.
+ * @param string $path Request path or route.
+ * @return bool Whether the path matches a configured prefix.
+ * @since 1.3.0
+ **/
+function tn_session_validation_path_matches( array $prefixes, string $path ): bool {
+	$path = rtrim( tn_normalize_session_validation_path( $path ), '/' );
+
+	if ( '' === $path ) {
+		$path = '/';
+	}
+
+	foreach ( $prefixes as $prefix ) {
+		if ( ! is_scalar( $prefix ) ) {
+			continue;
+		}
+
+		$prefix = rtrim( tn_normalize_session_validation_path( (string) $prefix ), '/' );
+
+		if ( '' === $prefix ) {
+			$prefix = '/';
+		}
+
+		if ( '/' === $prefix ) {
+			return true;
+		}
+
+		if ( $path === $prefix || 0 === strpos( $path, $prefix . '/' ) ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Check whether session validation should run for an area and path.
+ *
+ * @param string $area Session validation area.
+ * @param string $path Request path or route.
+ * @return bool Whether session validation should run.
+ * @since 1.3.0
+ **/
+function tn_should_validate_session_area( string $area, string $path = '' ): bool {
+	$areas = tn_get_session_validation_areas();
+
+	if ( ! array_key_exists( $area, $areas ) ) {
+		return false;
+	}
+
+	if ( true === $areas[ $area ] ) {
+		return true;
+	}
+
+	if ( ! is_array( $areas[ $area ] ) ) {
+		return false;
+	}
+
+	return tn_session_validation_path_matches( $areas[ $area ], $path );
+}
+
+/**
+ * Get the current request path.
+ *
+ * @return string Current request path.
+ * @since 1.3.0
+ **/
+function tn_get_session_validation_request_path(): string {
+	if ( empty( $_SERVER['REQUEST_URI'] ) ) {
+		return '/';
+	}
+
+	return tn_normalize_session_validation_path( (string) wp_unslash( $_SERVER['REQUEST_URI'] ) ); //phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+}
+
+/**
+ * Get the current REST API route.
+ *
+ * @return string Current REST API route.
+ * @since 1.3.0
+ **/
+function tn_get_session_validation_rest_route(): string {
+	if ( ! empty( $GLOBALS['wp']->query_vars['rest_route'] ) && is_scalar( $GLOBALS['wp']->query_vars['rest_route'] ) ) {
+		return tn_normalize_session_validation_path( (string) $GLOBALS['wp']->query_vars['rest_route'] );
+	}
+
+	if ( ! empty( $_GET['rest_route'] ) && is_scalar( $_GET['rest_route'] ) ) {
+		return tn_normalize_session_validation_path( (string) wp_unslash( $_GET['rest_route'] ) ); //phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	}
+
+	return tn_get_session_validation_request_path();
+}
+
+/**
+ * Get the current session token from available WordPress auth cookies.
+ *
+ * @return string Session token, or an empty string when unavailable.
+ * @since 1.3.0
+ **/
+function tn_get_session_validation_token(): string {
+	$token = wp_get_session_token();
+
+	if ( $token ) {
+		return $token;
+	}
+
+	foreach ( array( '', 'secure_auth', 'auth' ) as $scheme ) {
+		$cookie = wp_parse_auth_cookie( '', $scheme );
+
+		if ( empty( $cookie['token'] ) ) {
+			continue;
+		}
+
+		if ( get_current_user_id() !== wp_validate_auth_cookie( '', $scheme ) ) {
+			continue;
+		}
+
+		return (string) $cookie['token'];
+	}
+
+	return '';
+}
+
+/**
+ * Get invalid session validation data for the current request.
+ *
+ * @return array|null Invalid session data, or null when the session is valid.
+ * @since 1.3.0
+ **/
+function tn_get_session_validation_failure(): ?array {
+	if ( ! is_user_logged_in() ) {
+		return null;
+	}
+
+	$sessions = WP_Session_Tokens::get_instance( get_current_user_id() );
+	$token    = tn_get_session_validation_token();
+
+	// No session token means this is probably a API request let it pass.
+	// @todo: realistically the only time this might happen is admin-ajax.php or post-admin.php.
+	if ( ! $token ) {
+		return null;
+	}
+
+	$session_data = $sessions->get( $token );
+
+	if ( ! $session_data || ! is_array( $session_data ) ) {
+		return array(
+			'ip'           => null,
+			'ua'           => null,
+			'session_data' => array(),
+			'notify'       => false,
+		);
+	}
+
+	$ip = null;
+	if ( ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
+		$ip = wp_unslash( $_SERVER['REMOTE_ADDR'] ); //phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+	}
+
+	$ua = null;
+	if ( ! empty( $_SERVER['HTTP_USER_AGENT'] ) ) {
+		$ua = wp_unslash( $_SERVER['HTTP_USER_AGENT'] ); //phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+	}
+
+	if (
+		empty( $ip ) ||
+		empty( $ua ) ||
+		empty( $session_data['ip'] ) ||
+		empty( $session_data['ua'] ) ||
+		$ip !== $session_data['ip'] ||
+		$ua !== $session_data['ua']
+	) {
+		return array(
+			'ip'           => $ip,
+			'ua'           => $ua,
+			'session_data' => $session_data,
+			'notify'       => true,
+		);
+	}
+
+	return null;
+}
+
+/**
+ * Handle an invalid session validation failure.
+ *
+ * @param array  $failure Invalid session data.
+ * @param string $area Session validation area.
+ * @return WP_Error|null REST error for REST requests, otherwise null.
+ * @since 1.3.0
+ **/
+function tn_handle_session_validation_failure( array $failure, string $area = 'wp_admin' ) {
+	if ( ! empty( $failure['notify'] ) ) {
+		do_action( 'tn_tame_session_non_valid', $failure['ip'], $failure['ua'], $failure['session_data'] );
+	}
+
+	wp_logout();
+
+	if ( 'rest_api' === $area ) {
+		return new WP_Error(
+			'invalid_session',
+			__( 'Invalid session.', 'tn-tame-session-defaults' ),
+			array( 'status' => 403 )
+		);
+	}
+
+	wp_die(
+		esc_html__( 'Invalid session.', 'tn-tame-session-defaults' ),
+		'',
+		array( 'response' => 403 )
+	);
+
+	return null;
+}
+
+/**
  * Validates IP & UA of a session
  *
  * @return void
  * @since 1.1.0
  **/
 function tn_validate_session(): void {
+	$failure = tn_get_session_validation_failure();
 
-	if ( is_user_logged_in() ) {
-		$sessions = WP_Session_Tokens::get_instance( get_current_user_id() );
-		$token    = wp_get_session_token();
-		// No session token means this is probably a API request let it pass.
-		// @todo: realistically the only time this might happen is admin-ajax.php or post-admin.php.
-		if ( ! $token ) {
-			return;
-		}
-		$session_data = $sessions->get( $token );
-		// No session data, we should log the user out as their token might have expired.
-		if ( ! $session_data || ! is_array( $session_data ) ) {
-			wp_logout();
-			wp_die(
-				esc_html__( 'Invalid session.', 'tn-tame-session-defaults' ),
-				'',
-				array( 'response' => 403 )
-			);
-		}
-		// Current User IP address.
-		$ip = null;
-		if ( ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
-			$ip = wp_unslash( $_SERVER['REMOTE_ADDR'] ); //phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		}
-		// Current User User-agent.
-		$ua = null;
-		if ( ! empty( $_SERVER['HTTP_USER_AGENT'] ) ) {
-			$ua = wp_unslash( $_SERVER['HTTP_USER_AGENT'] ); //phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-		}
-		if (
-			empty( $ip ) ||
-			empty( $ua ) ||
-			empty( $session_data['ip'] ) ||
-			empty( $session_data['ua'] ) ||
-			$ip !== $session_data['ip'] ||
-			$ua !== $session_data['ua']
-		) {
-			// The session is invalid, log the user out.
-			do_action( 'tn_tame_session_non_valid', $ip, $ua, $session_data );
-			wp_logout();
-			wp_die(
-				esc_html__( 'Invalid session.', 'tn-tame-session-defaults' ),
-				'',
-				array( 'response' => 403 )
-			);
-		}
+	if ( null !== $failure ) {
+		tn_handle_session_validation_failure( $failure );
 	}
+}
+
+/**
+ * Validate front-end requests when configured.
+ *
+ * @return void
+ * @since 1.3.0
+ **/
+function tn_init_front_end_validate_session(): void {
+	if ( ! is_user_logged_in() ) {
+		return;
+	}
+
+	if ( tn_should_validate_session_area( 'front_end', tn_get_session_validation_request_path() ) ) {
+		tn_validate_session();
+	}
+}
+
+/**
+ * Validate REST API requests when configured.
+ *
+ * @param mixed $result Existing REST authentication result.
+ * @return mixed REST authentication result.
+ * @since 1.3.0
+ **/
+function tn_validate_rest_session( $result ) {
+	if ( $result instanceof WP_Error || ( null !== $result && true !== $result ) ) {
+		return $result;
+	}
+
+	if ( ! is_user_logged_in() ) {
+		return $result;
+	}
+
+	if ( ! tn_should_validate_session_area( 'rest_api', tn_get_session_validation_rest_route() ) ) {
+		return $result;
+	}
+
+	$failure = tn_get_session_validation_failure();
+
+	if ( null === $failure ) {
+		return $result;
+	}
+
+	return tn_handle_session_validation_failure( $failure, 'rest_api' );
 }
 
 /**
@@ -357,9 +621,14 @@ function tn_validate_session(): void {
  **/
 function tn_init_validate_session(): void {
 	// Check if we should validate sessions, defaults to true.
-	if ( apply_filters( 'tn_tame_session_validate_session', true ) ) {
+	if (
+		apply_filters( 'tn_tame_session_validate_session', true ) &&
+		tn_should_validate_session_area( 'wp_admin', tn_get_session_validation_request_path() )
+	) {
 		tn_validate_session();
 	}
 }
 
 add_action( 'admin_init', 'tn_init_validate_session' );
+add_action( 'template_redirect', 'tn_init_front_end_validate_session' );
+add_filter( 'rest_authentication_errors', 'tn_validate_rest_session', 100 );

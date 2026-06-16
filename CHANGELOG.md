@@ -2,6 +2,11 @@
 
 This contains all the major changes between versions.
 
+### Unreleased
+
+- [Feature] - Added area-based session validation controls for wp-admin, front-end, and REST API requests.
+- [Feature] - Added `tn_tame_session_validate_session_areas`.
+
 ### V1.2.1 16th Jun 2026
 
 - [Docs] - Added a security policy and linked to it from the README.

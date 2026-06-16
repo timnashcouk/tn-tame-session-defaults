@@ -6,7 +6,7 @@ It also includes controls for:
 
 - Shortening session lengths by default.
 - Fine-tuning session lengths with filters, including per user or role.
-- Validating admin requests against the stored session IP address and user agent.
+- Validating selected logged-in request areas against the stored session IP address and user agent.
 - Limiting users to one active session by destroying other sessions on login.
 - Requiring re-authentication before configured sensitive admin operations.
 
@@ -71,11 +71,43 @@ add_filter(
 
 Controls whether IP address and user-agent validation runs for logged-in admin-area requests.
 
-This runs on `admin_init`, so it covers wp-admin screens, `admin-ajax.php`, and `admin-post.php`. It is not a site-wide front-end or REST API validation layer. Validation is enabled by default.
+This runs on `admin_init`, so it covers wp-admin screens, `admin-ajax.php`, and `admin-post.php`. Validation is enabled by default for this existing wp-admin area.
 
 ```php
 add_filter( 'tn_tame_session_validate_session', '__return_false' );
 ```
+
+### tn_tame_session_validate_session_areas
+
+Controls which logged-in request areas should run IP address and user-agent validation.
+
+The default policy matches the original behaviour: wp-admin validation is enabled, front-end and REST API validation are disabled.
+
+Area values can be:
+
+- `true` to validate all logged-in requests in that area.
+- `false` to skip validation for that area.
+- An array of path or route prefixes to validate only matching requests.
+
+```php
+add_filter(
+	'tn_tame_session_validate_session_areas',
+	function ( array $areas ): array {
+		$areas['front_end'] = array( '/account/', '/checkout/' );
+		$areas['rest_api']  = array( '/wp/v2/users', '/my-plugin/v1/' );
+
+		return $areas;
+	}
+);
+```
+
+Available areas are:
+
+- `wp_admin` for wp-admin screens, `admin-ajax.php`, and `admin-post.php`.
+- `front_end` for front-end requests.
+- `rest_api` for REST API requests.
+
+Prefix matching is segment-aware. For example, `/account/` matches `/account` and `/account/profile/`, but not `/accounting/` or `/my-account/`.
 
 ### tn_tame_session_reauth_operations
 
