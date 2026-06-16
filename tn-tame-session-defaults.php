@@ -73,7 +73,11 @@ function tn_validate_session(): void {
 		// No session data, we should log the user out as their token might have expired.
 		if ( ! $session_data || ! is_array( $session_data ) ) {
 			wp_logout();
-			wp_die( esc_html__( 'Invalid session.', 'tn-tame-session-defaults' ) );
+			wp_die(
+				esc_html__( 'Invalid session.', 'tn-tame-session-defaults' ),
+				'',
+				array( 'response' => 403 )
+			);
 		}
 		// Current User IP address.
 		$ip = null;
@@ -96,7 +100,11 @@ function tn_validate_session(): void {
 			// The session is invalid, log the user out.
 			do_action( 'tn_tame_session_non_valid', $ip, $ua, $session_data );
 			wp_logout();
-			wp_die( esc_html__( 'Invalid session.', 'tn-tame-session-defaults' ) );
+			wp_die(
+				esc_html__( 'Invalid session.', 'tn-tame-session-defaults' ),
+				'',
+				array( 'response' => 403 )
+			);
 		}
 	}
 }
