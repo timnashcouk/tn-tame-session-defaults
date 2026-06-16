@@ -592,7 +592,7 @@ function tn_init_front_end_validate_session(): void {
  * @since 1.3.0
  **/
 function tn_validate_rest_session( $result ) {
-	if ( null !== $result ) {
+	if ( $result instanceof WP_Error || ( null !== $result && true !== $result ) ) {
 		return $result;
 	}
 
