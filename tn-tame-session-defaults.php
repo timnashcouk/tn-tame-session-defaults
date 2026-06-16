@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 /**
  * Plugin Name:     TN Tame Session Defaults
  * Plugin URI:      https://github.com/timnashcouk/tn-tame-session-defaults
@@ -24,16 +26,11 @@
 function tn_set_session_length( int $seconds, int $user_id, bool $remember = false ): int {
 	$default_session          = absint( apply_filters( 'tn_tame_session_default', 60 * 60 * 2, $user_id ) ); // 2 hours
 	$default_remember_session = absint( apply_filters( 'tn_tame_session_default_remember', 60 * 60 * 24, $user_id ) ); // 24 hours
-	if ( ! $remember ) {
-		$expiry = $default_session;
-	} else {
-		$expiry = $default_remember_session;
-	}
-	// If the default session is geater then the pre-existing session expiry, use the pre-existing.
-	if ( $expiry > absint( $seconds ) ) {
-		$expiry = absint( $seconds );
-	}
-	return $expiry;
+
+	$expiry = $remember ? $default_remember_session : $default_session;
+
+	// If the default session is greater than the pre-existing session expiry, use the pre-existing.
+	return min( $expiry, absint( $seconds ) );
 }
 add_filter( 'auth_cookie_expiration', 'tn_set_session_length', 10, 3 );
 
@@ -136,6 +133,20 @@ function tn_get_session_request_value( string $key ): string {
 }
 
 /**
+ * Get the current request method.
+ *
+ * @return string Request method, or an empty string.
+ * @since 1.3.0
+ **/
+function tn_get_session_request_method(): string {
+	if ( empty( $_SERVER['REQUEST_METHOD'] ) ) {
+		return '';
+	}
+
+	return strtoupper( (string) wp_unslash( $_SERVER['REQUEST_METHOD'] ) ); //phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+}
+
+/**
  * Get the current configured operation that needs session freshness.
  *
  * @return array|null Operation configuration, or null if none match.
@@ -151,11 +162,7 @@ function tn_get_sensitive_session_operation(): ?array {
 	$current_page   = isset( $GLOBALS['pagenow'] ) ? (string) $GLOBALS['pagenow'] : '';
 	$current_action = tn_get_session_request_value( 'action' );
 	$bulk_action    = tn_get_session_request_value( 'action2' );
-	$request_method = '';
-
-	if ( ! empty( $_SERVER['REQUEST_METHOD'] ) ) {
-		$request_method = strtoupper( (string) wp_unslash( $_SERVER['REQUEST_METHOD'] ) ); //phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-	}
+	$request_method = tn_get_session_request_method();
 
 	foreach ( $operations as $id => $operation ) {
 		if ( ! is_array( $operation ) || empty( $operation['max_age'] ) ) {
@@ -223,12 +230,7 @@ function tn_session_needs_reauthentication( array $operation, ?int $now = null )
  * @since 1.2.0
  **/
 function tn_session_reauth_can_redirect(): bool {
-	$request_method = '';
-
-	if ( ! empty( $_SERVER['REQUEST_METHOD'] ) ) {
-		$request_method = strtoupper( (string) wp_unslash( $_SERVER['REQUEST_METHOD'] ) ); //phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-	}
-
+	$request_method = tn_get_session_request_method();
 	return in_array( $request_method, array( '', 'GET', 'HEAD' ), true );
 }
 
@@ -530,7 +532,7 @@ function tn_get_session_validation_failure(): ?array {
  * @return WP_Error|null REST error for REST requests, otherwise null.
  * @since 1.3.0
  **/
-function tn_handle_session_validation_failure( array $failure, string $area = 'wp_admin' ) {
+function tn_handle_session_validation_failure( array $failure, string $area = 'wp_admin' ): ?WP_Error {
 	if ( ! empty( $failure['notify'] ) ) {
 		do_action( 'tn_tame_session_non_valid', $failure['ip'], $failure['ua'], $failure['session_data'] );
 	}
