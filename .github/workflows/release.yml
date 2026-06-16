@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - tn-tame-session-defaults.php
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read plugin version
+        id: plugin
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          current_version="$(awk -F': *' '/^[[:space:]]*\* Version:/ { print $2; exit }' tn-tame-session-defaults.php)"
+
+          if [ -z "$current_version" ]; then
+            echo "Could not read Version header from tn-tame-session-defaults.php"
+            exit 1
+          fi
+
+          if ! echo "$current_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9][A-Za-z0-9.-]*)?$'; then
+            echo "Plugin Version header must be a semantic version, found: $current_version"
+            exit 1
+          fi
+
+          previous_version=""
+          if [ "$EVENT_NAME" = "push" ]; then
+            previous_version="$(git show "$BEFORE_SHA:tn-tame-session-defaults.php" 2>/dev/null | awk -F': *' '/^[[:space:]]*\* Version:/ { print $2; exit }' || true)"
+          fi
+
+          if [ "$EVENT_NAME" = "push" ] && [ "$current_version" = "$previous_version" ]; then
+            echo "Version header unchanged; skipping release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "version=$current_version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$current_version" >> "$GITHUB_OUTPUT"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build zip
+        if: steps.plugin.outputs.should_release == 'true'
+        run: |
+          set -euo pipefail
+
+          mkdir -p build/tn-tame-session-defaults
+          cp CHANGELOG.md LICENSE README.md tn-tame-session-defaults.php build/tn-tame-session-defaults/
+          cd build
+          zip -r "../tn-tame-session-defaults-${{ steps.plugin.outputs.version }}.zip" tn-tame-session-defaults
+
+      - name: Create or update GitHub release
+        if: steps.plugin.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag="${{ steps.plugin.outputs.tag }}"
+          asset="tn-tame-session-defaults-${{ steps.plugin.outputs.version }}.zip"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; updating asset."
+          else
+            gh release create "$tag" \
+              --target "$GITHUB_SHA" \
+              --title "TN Tame Session Defaults ${{ steps.plugin.outputs.version }}" \
+              --notes "Release built from plugin Version header ${{ steps.plugin.outputs.version }}."
+          fi
+
+          gh release upload "$tag" "$asset" --clobber
